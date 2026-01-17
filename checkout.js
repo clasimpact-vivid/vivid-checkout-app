@@ -54,42 +54,53 @@ Ecwid.OnAPILoaded.add(function() {
         container.prepend(div);
     }
 
-    function applyLogic(cart) {
-        const requires = cartRequiresPrepayment(cart);
+    // -----------------------------
+    // Retry inteligent
+    // -----------------------------
+    function applyLogicWithRetry(attempt = 1) {
+        console.log("Applying logic, attempt:", attempt);
 
-        if (requires) {
-            hidePaymentMethod("COD");
-            hidePaymentMethod("CASH");
-            hidePaymentMethod("PAYPAL");
-            hidePaymentMethod("BANK_TRANSFER");
-            showPaymentMethod("CREDIT_CARD");
-            injectPreorderMessage();
-        } else {
-            showPaymentMethod("COD");
-            showPaymentMethod("CASH");
-            showPaymentMethod("PAYPAL");
-            showPaymentMethod("BANK_TRANSFER");
-            showPaymentMethod("CREDIT_CARD");
-        }
-    }
-
-    // Așteptăm randarea completă a metodelor de plată
-    function delayedApply() {
         Ecwid.Cart.get(function(cart) {
-            setTimeout(() => applyLogic(cart), 300);
+            try {
+                const requires = cartRequiresPrepayment(cart);
+
+                // Testăm dacă metodele sunt disponibile
+                if (typeof Ecwid.Payment.hidePaymentMethod !== "function") {
+                    throw new Error("Payment API not ready");
+                }
+
+                if (requires) {
+                    hidePaymentMethod("COD");
+                    hidePaymentMethod("CASH");
+                    hidePaymentMethod("PAYPAL");
+                    hidePaymentMethod("BANK_TRANSFER");
+                    showPaymentMethod("CREDIT_CARD");
+                    injectPreorderMessage();
+                } else {
+                    showPaymentMethod("COD");
+                    showPaymentMethod("CASH");
+                    showPaymentMethod("PAYPAL");
+                    showPaymentMethod("BANK_TRANSFER");
+                    showPaymentMethod("CREDIT_CARD");
+                }
+
+            } catch (e) {
+                console.warn("Payment API not ready yet:", e);
+
+                if (attempt < 10) {
+                    setTimeout(() => applyLogicWithRetry(attempt + 1), 200);
+                }
+            }
         });
     }
 
-    Ecwid.OnCartChanged.add(function(cart) {
-        console.log("Cart changed");
-        delayedApply();
+    Ecwid.OnCartChanged.add(function() {
+        applyLogicWithRetry();
     });
 
     Ecwid.OnPageLoaded.add(function(page) {
-        console.log("Page loaded:", page.type);
-
         if (page.type === "CHECKOUT_PAYMENT_DETAILS") {
-            delayedApply();
+            applyLogicWithRetry();
         }
     });
 
