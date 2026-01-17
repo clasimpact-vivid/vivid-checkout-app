@@ -1,103 +1,115 @@
-// ===============================
-//  PREORDER CHECKOUT LOGIC
-//  Vivid Senses / Ecwid Custom App
-// ===============================
+Ecwid.OnAPILoaded.add(function() {
 
-// Detectăm dacă există produse care cer plata în avans
-function cartRequiresPrepayment(cart) {
-    let requires = false;
+    console.log("Vivid Checkout Script: API Loaded");
 
-    if (!cart || !cart.items) return false;
+    // -----------------------------------------
+    // 1. Funcție: verifică dacă produsul cere preplată
+    // -----------------------------------------
+    function cartRequiresPrepayment(cart) {
+        if (!cart || !cart.items) return false;
 
-    cart.items.forEach(function(item) {
-        if (item.product && item.product.attributes) {
-            item.product.attributes.forEach(function(attr) {
-                if (attr.name === "RequiresPrepayment" && attr.value === "Yes") {
-                    requires = true;
-                }
+        return cart.items.some(item => {
+            if (!item.product || !item.product.attributes) return false;
+
+            return item.product.attributes.some(attr =>
+                attr.name === "RequiresPrepayment" &&
+                String(attr.value).toLowerCase() === "yes"
+            );
+        });
+    }
+
+    // -----------------------------------------
+    // 2. Funcție: ascunde metodele de plată
+    // -----------------------------------------
+    function hidePaymentMethod(methodName) {
+        try {
+            Ecwid.Payment.hidePaymentMethod(methodName);
+            console.log("Hidden payment method:", methodName);
+        } catch (e) {
+            console.warn("Cannot hide payment method:", methodName, e);
+        }
+    }
+
+    // -----------------------------------------
+    // 3. Funcție: afișează metodele de plată
+    // -----------------------------------------
+    function showPaymentMethod(methodName) {
+        try {
+            Ecwid.Payment.showPaymentMethod(methodName);
+            console.log("Shown payment method:", methodName);
+        } catch (e) {
+            console.warn("Cannot show payment method:", methodName, e);
+        }
+    }
+
+    // -----------------------------------------
+    // 4. Funcție: injectează mesajul de preorder
+    // -----------------------------------------
+    function injectPreorderMessage() {
+        const msgId = "vivid-preorder-msg";
+
+        if (document.getElementById(msgId)) return;
+
+        const container = document.querySelector(".ecwid-PaymentMethodsBlock");
+        if (!container) return;
+
+        const div = document.createElement("div");
+        div.id = msgId;
+        div.style.background = "#fff3cd";
+        div.style.border = "1px solid #ffeeba";
+        div.style.padding = "12px";
+        div.style.marginBottom = "15px";
+        div.style.borderRadius = "6px";
+        div.style.fontSize = "14px";
+        div.style.color = "#856404";
+        div.innerText = "Acest produs este disponibil doar în regim de precomandă. Plata online este necesară pentru procesarea comenzii.";
+
+        container.prepend(div);
+    }
+
+    // -----------------------------------------
+    // 5. Logica principală — rulează la schimbarea coșului
+    // -----------------------------------------
+    Ecwid.OnCartChanged.add(function(cart) {
+
+        console.log("Vivid Checkout Script: Cart changed", cart);
+
+        const requiresPrepay = cartRequiresPrepayment(cart);
+
+        if (requiresPrepay) {
+            console.log("Prepayment required — applying restrictions");
+
+            hidePaymentMethod("COD");
+            hidePaymentMethod("CASH");
+            hidePaymentMethod("PAYPAL");
+            hidePaymentMethod("BANK_TRANSFER");
+
+            showPaymentMethod("CREDIT_CARD");
+
+            injectPreorderMessage();
+
+        } else {
+            console.log("No prepayment required — restoring all methods");
+
+            showPaymentMethod("COD");
+            showPaymentMethod("CASH");
+            showPaymentMethod("PAYPAL");
+            showPaymentMethod("BANK_TRANSFER");
+            showPaymentMethod("CREDIT_CARD");
+        }
+    });
+
+    // -----------------------------------------
+    // 6. Rulează și la încărcarea paginii
+    // -----------------------------------------
+    Ecwid.OnPageLoaded.add(function(page) {
+        console.log("Vivid Checkout Script: Page loaded", page);
+
+        if (page.type === "CHECKOUT_PAYMENT_DETAILS") {
+            Ecwid.Cart.get(function(cart) {
+                Ecwid.OnCartChanged.call(cart);
             });
         }
     });
 
-    return requires;
-}
-
-// ===============================
-//  LOGICA PRINCIPALĂ
-// ===============================
-
-Ecwid.OnCartChanged.add(function(cart) {
-    const requiresPrepayment = cartRequiresPrepayment(cart);
-
-    // -------------------------------
-    //  LOGICA METODE DE PLATĂ
-    // -------------------------------
-
-    if (requiresPrepayment) {
-        // Ascundem metodele care NU sunt permise la preorder
-        Ecwid.Payment.hidePaymentMethod("2026490594-1594808817133"); // Pay by cash/card la livrare
-        Ecwid.Payment.hidePaymentMethod("211193-1669977876031");     // Cash la livrare
-        Ecwid.Payment.hidePaymentMethod("20082-1594900114203");      // PayPal
-        Ecwid.Payment.hidePaymentMethod("212269-1669977994171");     // Transfer bancar
-
-        // Stripe rămâne vizibil (nu îl ascundem)
-    } else {
-        // Afișăm toate metodele când nu e preorder
-        Ecwid.Payment.showPaymentMethod("2026490594-1594808817133");
-        Ecwid.Payment.showPaymentMethod("211193-1669977876031");
-        Ecwid.Payment.showPaymentMethod("20082-1594900114203");
-        Ecwid.Payment.showPaymentMethod("212269-1669977994171");
-    }
-
-    // -------------------------------
-    //  LOGICA METODE DE LIVRARE (opțional)
-    //  Poți adăuga ID-urile tale aici
-    // -------------------------------
-
-    /*
-    if (requiresPrepayment) {
-        Ecwid.Delivery.hideShippingMethod("locker-id");
-        Ecwid.Delivery.hideShippingMethod("cash-on-delivery-courier-id");
-    } else {
-        Ecwid.Delivery.showShippingMethod("locker-id");
-        Ecwid.Delivery.showShippingMethod("cash-on-delivery-courier-id");
-    }
-    */
-});
-
-// ===============================
-//  MESAJ ÎN CHECKOUT
-// ===============================
-
-Ecwid.OnPageLoaded.add(function(page) {
-    if (page.type !== "CHECKOUT_PAYMENT_DETAILS") return;
-
-    Ecwid.Cart.get(function(cart) {
-        const requiresPrepayment = cartRequiresPrepayment(cart);
-
-        if (!requiresPrepayment) return;
-
-        // Injectăm mesajul în checkout
-        const container = document.querySelector(".ec-cart-step__body");
-        if (!container) return;
-
-        const msg = document.createElement("div");
-        msg.innerHTML = `
-            <div style="
-                padding: 12px;
-                background: #fff3cd;
-                border: 1px solid #ffeeba;
-                color: #856404;
-                margin-bottom: 15px;
-                border-radius: 4px;
-                font-size: 14px;
-            ">
-                Acest produs este în <strong>PRECOMANDĂ</strong>.  
-                Livrare estimată: <strong>10–14 zile</strong>.  
-                Plata online este necesară pentru confirmarea comenzii.
-            </div>
-        `;
-
-        container.prepend(msg);
-    });
 });
